@@ -17,8 +17,6 @@ def clean_abstract(abstract):
         abstract[i] = re.sub(r'\s+', ' ', abstract[i].text) + '\n\n'
     
     return (''.join(abstract))
-
-
 links_list = []
 exceptions = []
 exception_links = []
