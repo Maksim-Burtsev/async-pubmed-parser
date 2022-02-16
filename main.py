@@ -10,8 +10,6 @@ from progress.bar import IncrementalBar
 
 USER = fake_useragent.UserAgent().random
 HEADER = {'user-agent': USER}
-# LINK = 'https://pubmed.ncbi.nlm.nih.gov/?term=testosterone&filter=years.2022-2022&page='
-# LINK = 'https://pubmed.ncbi.nlm.nih.gov/?term=vitamin+d' + '&page='
 
 PUBMED_LINK = 'https://pubmed.ncbi.nlm.nih.gov'
 
@@ -31,6 +29,7 @@ def clean_abstract(abstract):
 
 def parser(url: str) -> list:
     """Собирает все ссылки на исследования со страницы"""
+
     response = requests.get(url, headers=HEADER)
     soup = BeautifulSoup(response.text, 'html.parser')
 
@@ -75,6 +74,7 @@ def missed_s(exception_links):
 
 def write_abstact(document, abstract):
     """Записывает abstract в word-документ"""
+    
     p = document.add_paragraph().add_run(f'\n{abstract}')
     font = p.font
     font.name = 'Calibri'
