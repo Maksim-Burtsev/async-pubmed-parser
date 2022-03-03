@@ -102,7 +102,7 @@ def main():
     bar = IncrementalBar('Записано в файл', max=len(links_list))
 
     document = Document()
-    document.add_heading('Testosterone', 0)
+    document.add_heading(f'{file_name.capitalize()}', 0)
 
     run = document.add_paragraph().add_run()
     font = run.font
