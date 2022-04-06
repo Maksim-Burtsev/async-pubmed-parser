@@ -1,8 +1,9 @@
-import requests
-from bs4 import BeautifulSoup
-import fake_useragent
-import time
 import re
+import time
+import requests
+
+import fake_useragent
+from bs4 import BeautifulSoup
 from docx import Document
 from docx.shared import Pt
 from progress.bar import IncrementalBar

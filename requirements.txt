@@ -1,0 +1,6 @@
+fake-useragent==0.1.11
+bs4==0.0.1
+python-docx==0.8.11
+progressbar==2.5
+progress==1.6
+requests==2.27.1
