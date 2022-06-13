@@ -1,11 +1,13 @@
 import re
 import time
-import requests
 
+import requests
 import fake_useragent
 from bs4 import BeautifulSoup
+
 from docx import Document
 from docx.shared import Pt
+
 from progress.bar import IncrementalBar
 
 
@@ -15,8 +17,10 @@ HEADER = {'user-agent': USER}
 PUBMED_LINK = 'https://pubmed.ncbi.nlm.nih.gov'
 
 
-def clean_abstract(abstract):
-    """Удаляет все лишние пробелы"""
+def _clean_abstract(abstract: str) -> str:
+    """
+    Удаляет все лишние пробелы
+    """
 
     if len(abstract) == 1:
         abstract[0] = re.sub(r'\s+', ' ', abstract[0].text)
@@ -28,28 +32,28 @@ def clean_abstract(abstract):
     return (''.join(abstract))
 
 
-def parser(url: str) -> list:
+def _parser(url: str) -> list:
     """Собирает все ссылки на исследования со страницы"""
 
     response = requests.get(url, headers=HEADER)
     soup = BeautifulSoup(response.text, 'html.parser')
 
-    div = soup.find('div', class_='search-results-chunks')
-    links = div.findAll('a', class_='docsum-title')
+    div = soup.find('div', {'class': 'search-results-chunks'})
+    links = div.findAll('a', {'class': 'docsum-title'})
 
     return links
 
 
-def get_s_links():
+def _get_all_research_links(link: str) -> list:
     """Собирает все ссылки на исследования с 5 страниц"""
     links_list = []
 
     bar = IncrementalBar('Обработано страниц', max=5)
 
     for i in range(1, 6):
-        url = LINK + str(i)
+        url = link + str(i)
         try:
-            links = parser(url)
+            links = _parser(url)
 
             for link in links:
                 links_list.append(link.get('href'))
@@ -65,7 +69,7 @@ def get_s_links():
     return links_list
 
 
-def missed_s(exception_links):
+def _write_missed_research(exception_links: list[str]) -> None:
     """Записывает в файл ссылки на все пропущенные исследования"""
 
     with open('Пропущенные исследования.txt', 'w', encoding='utf-8') as f:
@@ -73,32 +77,32 @@ def missed_s(exception_links):
             f.write(str(exception_links[i])+'\n')
 
 
-def write_abstact(document, abstract):
+def _write_abstact_in_word(document: Document, abstract: str) -> None:
     """Записывает abstract в word-документ"""
-    
+
     p = document.add_paragraph().add_run(f'\n{abstract}')
     font = p.font
     font.name = 'Calibri'
     font.size = Pt(14)
 
 
-def user_input():
+def _user_input() -> tuple[str, str]:
     """Используется для получения ввода пользователя"""
 
-    global LINK, file_name
-    LINK = input("Ссылка: ").strip() + '&page='
-
+    link = input("Ссылка: ").strip() + '&page='
     file_name = input('Как назвать файл?')
+
+    return link, file_name
 
 
 def main():
 
-    user_input()
+    link, file_name = _user_input()
     exception_links = []
+    start = time.time()
     k = 0
 
-    start = time.time()
-    links_list = get_s_links()
+    links_list = _get_all_research_links(link=link)
 
     bar = IncrementalBar('Записано в файл', max=len(links_list))
 
@@ -127,9 +131,9 @@ def main():
             exception_links.append(link)
 
         else:
-            abstract = clean_abstract(abstract)
+            abstract = _clean_abstract(abstract)
 
-            write_abstact(document, abstract)
+            _write_abstact_in_word(document, abstract)
 
             document.add_heading(f'{link}', level=4)
 
@@ -142,7 +146,7 @@ def main():
     print(f"{k} исследований собрано.")
     print(f"\nвремя выполнения - {time.time() - start} sec")
 
-    missed_s(exception_links)
+    _write_missed_research(exception_links)
 
 
 if __name__ == '__main__':
