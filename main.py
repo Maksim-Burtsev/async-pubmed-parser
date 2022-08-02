@@ -12,34 +12,34 @@ from progress.bar import IncrementalBar
 
 
 USER = fake_useragent.UserAgent().random
-HEADER = {'user-agent': USER}
+HEADER = {"user-agent": USER}
 
-PUBMED_LINK = 'https://pubmed.ncbi.nlm.nih.gov'
+PUBMED_LINK = "https://pubmed.ncbi.nlm.nih.gov"
 
 
-def _clean_abstract(abstract: str) -> str:
+def _clean_abstract_from_spaces(abstract: str) -> str:
     """
     Удаляет все лишние пробелы
     """
 
     if len(abstract) == 1:
-        abstract[0] = re.sub(r'\s+', ' ', abstract[0].text)
-        return (''.join(abstract))
+        abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
+        return "".join(abstract)
 
     for i in range(len(abstract)):
-        abstract[i] = re.sub(r'\s+', ' ', abstract[i].text) + '\n\n'
+        abstract[i] = re.sub(r"\s+", " ", abstract[i].text) + "\n\n"
 
-    return (''.join(abstract))
+    return "".join(abstract)
 
 
-def _parser(url: str) -> list:
+def _get_links_from_page(page: str) -> list:
     """Собирает все ссылки на исследования со страницы"""
 
-    response = requests.get(url, headers=HEADER)
-    soup = BeautifulSoup(response.text, 'html.parser')
+    response = requests.get(page, headers=HEADER)
+    soup = BeautifulSoup(response.text, "html.parser")
 
-    div = soup.find('div', {'class': 'search-results-chunks'})
-    links = div.findAll('a', {'class': 'docsum-title'})
+    div = soup.find("div", {"class": "search-results-chunks"})
+    links = div.findAll("a", {"class": "docsum-title"})
 
     return links
 
@@ -48,15 +48,15 @@ def _get_all_research_links(link: str) -> list:
     """Собирает все ссылки на исследования с 5 страниц"""
     links_list = []
 
-    bar = IncrementalBar('Обработано страниц', max=5)
+    bar = IncrementalBar("Обработано страниц", max=5)
 
     for i in range(1, 6):
         url = link + str(i)
         try:
-            links = _parser(url)
+            links = _get_links_from_page(url)
 
             for link in links:
-                links_list.append(link.get('href'))
+                links_list.append(link.get("href"))
         except:
             break
 
@@ -72,75 +72,100 @@ def _get_all_research_links(link: str) -> list:
 def _write_missed_research(exception_links: list[str]) -> None:
     """Записывает в файл ссылки на все пропущенные исследования"""
 
-    with open('Пропущенные исследования.txt', 'w', encoding='utf-8') as f:
+    with open("Пропущенные исследования.txt", "w", encoding="utf-8") as f:
         for i in range(len(exception_links)):
-            f.write(str(exception_links[i])+'\n')
+            f.write(str(exception_links[i]) + "\n")
 
 
 def _write_abstact_in_word(document: Document, abstract: str) -> None:
     """Записывает abstract в word-документ"""
 
-    p = document.add_paragraph().add_run(f'\n{abstract}')
+    p = document.add_paragraph().add_run(f"\n{abstract}")
     font = p.font
-    font.name = 'Calibri'
+    font.name = "Calibri"
     font.size = Pt(14)
 
 
-def _user_input() -> tuple[str, str]:
-    """Используется для получения ввода пользователя"""
+def user_input() -> tuple[str, str]:
+    """Получения ввода пользователя"""
 
-    link = input("Ссылка: ").strip() + '&page='
-    file_name = input('Как назвать файл?')
+    link = input("Ссылка: ").strip() + "&page="
+    file_name = input("Как назвать файл?")
 
     return link, file_name
 
 
+def _get_research_page(link: str) -> BeautifulSoup | None:
+    """Возвращает html-страницу исследования, в случае неудачи None"""
+
+    response = requests.get(link, headers=HEADER).text
+    if response.statud_code == 200:
+        soup = BeautifulSoup(response, "html.parser")
+        return soup
+
+
+def _get_data_from_page(research_page: BeautifulSoup):
+
+    try:
+        title = research_page.find("h1", class_="heading-title").text.strip()
+        abstract_ps = research_page.find("div", class_="abstract-content selected")
+        abstract = abstract_ps.findAll("p")
+
+    except:
+        raise Exception("Ошибка при парсинге статьи")
+
+    else:
+        return (title, abstract)
+
+
+def write_research_into_doc(
+    research_page: BeautifulSoup, document: Document, link: str
+) -> None:
+    """Достаёт из страницы заголовок и абстракт и записывает их в документ"""
+
+    title, abstract = _get_data_from_page(research_page)
+    abstract = _clean_abstract_from_spaces(abstract)
+    _write_abstact_in_word(document, abstract)
+
+    document.add_heading(f"{title}", level=1)
+    document.add_heading(f"{link}", level=4)
+
+
 def main():
 
-    link, file_name = _user_input()
+    link, file_name = user_input()
     exception_links = []
     start = time.time()
     k = 0
 
     links_list = _get_all_research_links(link=link)
 
-    bar = IncrementalBar('Записано в файл', max=len(links_list))
+    bar = IncrementalBar("Записано в файл", max=len(links_list))
 
     document = Document()
-    document.add_heading(f'{file_name.capitalize()}', 0)
+    document.add_heading(f"{file_name.capitalize()}", 0)
 
     run = document.add_paragraph().add_run()
     font = run.font
-    font.name = 'Calibri'
+    font.name = "Calibri"
     font.size = Pt(14)
 
     for i in links_list:
 
         link = PUBMED_LINK + str(i)
-        response = requests.get(link, headers=HEADER).text
-        soup = BeautifulSoup(response, 'html.parser')
 
-        try:
-            title = soup.find('h1', class_='heading-title').text.strip()
-            document.add_heading(f'{title}', level=1)
+        soup = _get_research_page(link)
 
-            abstract_ps = soup.find('div', class_='abstract-content selected')
-            abstract = abstract_ps.findAll('p')
-
-        except Exception as e:
-            exception_links.append(link)
-
-        else:
-            abstract = _clean_abstract(abstract)
-
-            _write_abstact_in_word(document, abstract)
-
-            document.add_heading(f'{link}', level=4)
+        if soup:
+            try:
+                write_research_into_doc(soup, document, link)
+            except:
+                exception_links.append(link)
 
         k += 1
         bar.next()
 
-    document.save(f'{file_name}.docx')
+    document.save(f"{file_name}.docx")
     bar.finish()
 
     print(f"{k} исследований собрано.")
@@ -149,5 +174,5 @@ def main():
     _write_missed_research(exception_links)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
