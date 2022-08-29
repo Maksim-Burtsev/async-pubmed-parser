@@ -1,5 +1,6 @@
 import re
 import time
+from typing import NamedTuple
 
 import requests
 import fake_useragent
@@ -15,6 +16,10 @@ USER = fake_useragent.UserAgent().random
 HEADER = {"user-agent": USER}
 
 PUBMED_LINK = "https://pubmed.ncbi.nlm.nih.gov"
+
+class UserInput(NamedTuple):
+    link: str
+    filename: str
 
 
 def _clean_abstract_from_spaces(abstract: str) -> str:
@@ -41,7 +46,7 @@ def _get_links_from_page(page: str) -> list:
     div = soup.find("div", {"class": "search-results-chunks"})
     links = div.findAll("a", {"class": "docsum-title"})
 
-    return links
+    return [link.get("href") for link in links]
 
 
 def _get_all_research_links(link: str) -> list:
@@ -54,12 +59,9 @@ def _get_all_research_links(link: str) -> list:
         url = link + str(i)
         try:
             links = _get_links_from_page(url)
-
-            for link in links:
-                links_list.append(link.get("href"))
+            links_list.extend(links)
         except:
             break
-
         else:
             bar.next()
 
@@ -86,13 +88,13 @@ def _write_abstact_in_word(document: Document, abstract: str) -> None:
     font.size = Pt(14)
 
 
-def user_input() -> tuple[str, str]:
+def user_input() -> UserInput:
     """Получения ввода пользователя"""
 
     link = input("Ссылка: ").strip() + "&page="
-    file_name = input("Как назвать файл?")
+    filename = input("Как назвать файл?")
 
-    return link, file_name
+    return UserInput(link, filename)
 
 
 def _get_research_page(link: str) -> BeautifulSoup | None:
