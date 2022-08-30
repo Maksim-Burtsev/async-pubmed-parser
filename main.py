@@ -1,32 +1,102 @@
 import re
 import time
+import asyncio
 from typing import NamedTuple
 
-import requests
-import fake_useragent
+import aiohttp
 from bs4 import BeautifulSoup
+from aiohttp import ClientSession
 
-from docx import Document
-from docx.shared import Pt
-
-from progress.bar import IncrementalBar
+PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 
 
-USER = fake_useragent.UserAgent().random
-HEADER = {"user-agent": USER}
+class UserInputError(ValueError):
+    pass
 
-PUBMED_LINK = "https://pubmed.ncbi.nlm.nih.gov"
+
+class ParseDataError(Exception):
+    pass
+
 
 class UserInput(NamedTuple):
-    link: str
+    url: str
     filename: str
 
 
-def _clean_abstract_from_spaces(abstract: str) -> str:
-    """
-    Удаляет все лишние пробелы
-    """
+class UrlPage(NamedTuple):
+    url: str
+    html_page: str | None
 
+
+class TitleAbstract(NamedTuple):
+    title: str
+    abstract: list[str]
+
+
+def user_input() -> UserInput:
+    """Получения ввода пользователя."""
+
+    url = input("Ссылка: ").strip()
+    if not url:
+        raise UserInputError("\nПустая строка вместо ссылки!")
+
+    filename = input("Как назвать файл? ")
+    if not filename:
+        raise UserInputError("\nПустое имя файла!")
+
+    return UserInput(url + "&page={}", filename)
+
+
+def parse_research_urls_from_page(html_page: str) -> list[str]:
+    """Парсит ссылки на все исследования с одной страницы."""
+    soup = BeautifulSoup(html_page, "html.parser")
+    try:
+        div = soup.find("div", {"class": "search-results-chunks"})
+        urls = div.findAll("a", {"class": "docsum-title"})
+    except:
+        raise ParseDataError(
+            "Проблема со сбором исследований, проверьте введённую ссылку!"
+        )
+
+    return urls
+
+
+def parse_title_and_abstact(research_page: str) -> TitleAbstract:
+    """Достаёт название и абстракт исследования из его html-страницы."""
+    soup = BeautifulSoup(research_page, "html.parser")
+    try:
+        title = soup.find("h1", class_="heading-title").text.strip()
+        abstract_ps = soup.find("div", class_="abstract-content selected")
+        abstract = abstract_ps.findAll("p")
+    except:
+        raise ParseDataError("Ошибка при парсинге исследования!")
+
+    return TitleAbstract(title, abstract)
+
+
+async def get_research_urls(url: str) -> list[str | None]:
+    """Возвращает список с ссылками на исследования."""
+    async with ClientSession() as session:
+        async with session.get(url=url) as response:
+            if response.status == 200:
+                urls = parse_research_urls_from_page(await response.text())
+                return [f"{PUBMED_URL}{url.get('href')}" for url in urls]
+            return []
+
+
+async def get_research_page(page_url: str) -> UrlPage:
+    """Парсит страницу исследования. Если status code ответа != 200, то вместо содержимого страницы возвращается None."""
+    async with ClientSession() as session:
+        async with session.get(page_url) as response:
+            if response.status == 200:
+                page = await response.text()
+                return UrlPage(page_url, page)
+            else:
+                return UrlPage(page_url, None)
+
+
+def clean_abstract(abstract: list[str]) -> str:
+    """Очищает абстракт от служебных символов. Изначально абстракт представляет собой список абзацев."""
     if len(abstract) == 1:
         abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
         return "".join(abstract)
@@ -37,144 +107,60 @@ def _clean_abstract_from_spaces(abstract: str) -> str:
     return "".join(abstract)
 
 
-def _get_links_from_page(page: str) -> list:
-    """Собирает все ссылки на исследования со страницы"""
-
-    response = requests.get(page, headers=HEADER)
-    soup = BeautifulSoup(response.text, "html.parser")
-
-    div = soup.find("div", {"class": "search-results-chunks"})
-    links = div.findAll("a", {"class": "docsum-title"})
-
-    return [link.get("href") for link in links]
+def write_in_md_file(filename: str, text: str) -> None:
+    """Записывает текст в Markdown-файл."""
+    with open(f"{filename}.md", "w", encoding="utf-8") as f:
+        f.write(text)
 
 
-def _get_all_research_links(link: str) -> list:
-    """Собирает все ссылки на исследования с 5 страниц"""
-    links_list = []
-
-    bar = IncrementalBar("Обработано страниц", max=5)
-
-    for i in range(1, 6):
-        url = link + str(i)
-        try:
-            links = _get_links_from_page(url)
-            links_list.extend(links)
-        except:
-            break
-        else:
-            bar.next()
-
-    bar.finish()
-    print("Ссылки собраны!")
-
-    return links_list
-
-
-def _write_missed_research(exception_links: list[str]) -> None:
-    """Записывает в файл ссылки на все пропущенные исследования"""
-
-    with open("Пропущенные исследования.txt", "w", encoding="utf-8") as f:
-        for i in range(len(exception_links)):
-            f.write(str(exception_links[i]) + "\n")
-
-
-def _write_abstact_in_word(document: Document, abstract: str) -> None:
-    """Записывает abstract в word-документ"""
-
-    p = document.add_paragraph().add_run(f"\n{abstract}")
-    font = p.font
-    font.name = "Calibri"
-    font.size = Pt(14)
-
-
-def user_input() -> UserInput:
-    """Получения ввода пользователя"""
-
-    link = input("Ссылка: ").strip() + "&page="
-    filename = input("Как назвать файл?")
-
-    return UserInput(link, filename)
-
-
-def _get_research_page(link: str) -> BeautifulSoup | None:
-    """Возвращает html-страницу исследования, в случае неудачи None"""
-
-    response = requests.get(link, headers=HEADER).text
-    if response.statud_code == 200:
-        soup = BeautifulSoup(response, "html.parser")
-        return soup
-
-
-def _get_data_from_page(research_page: BeautifulSoup):
+async def main(url: str, filename: str) -> None:
+    start = time.time()
 
     try:
-        title = research_page.find("h1", class_="heading-title").text.strip()
-        abstract_ps = research_page.find("div", class_="abstract-content selected")
-        abstract = abstract_ps.findAll("p")
+        tasks = [get_research_urls(url.format(page)) for page in range(1, 4)]
+        research_urls: list[list[str | None]] = await asyncio.gather(*tasks)
+    except ParseDataError as e:
+        print(e)
+        return
+    except aiohttp.client_exceptions.InvalidURL:
+        print("Введите правильную ссылку!")
+        return
 
-    except:
-        raise Exception("Ошибка при парсинге статьи")
+    all_urls = []
+    for urls in research_urls:
+        all_urls.extend(urls)
+    print("\nСсылки на исследования собраны.\nНачинается сбор данных...")
 
-    else:
-        return (title, abstract)
+    tasks = [get_research_page(research_url) for research_url in all_urls]
+    research_data: list[UrlPage] = await asyncio.gather(*tasks)
 
+    print("\nДанные собраны!\nПодготовка и запись в файл...")
 
-def write_research_into_doc(
-    research_page: BeautifulSoup, document: Document, link: str
-) -> None:
-    """Достаёт из страницы заголовок и абстракт и записывает их в документ"""
+    formatted_research, skipped_urls = [], []
+    for url, research_page in research_data:
+        try:
+            title, abstract = parse_title_and_abstact(research_page)
+        except ParseDataError:
+            skipped_urls.append(url)
+        else:
+            formatted_research.append(
+                f"## **{title}**\n*{url}*<br>{clean_abstract(abstract)}\n"
+            )
+    if skipped_urls:
+        print(f"\nБыло пропущенно {len(skipped_urls)} исследований.")
 
-    title, abstract = _get_data_from_page(research_page)
-    abstract = _clean_abstract_from_spaces(abstract)
-    _write_abstact_in_word(document, abstract)
+    write_in_md_file(filename, text="".join(formatted_research))
 
-    document.add_heading(f"{title}", level=1)
-    document.add_heading(f"{link}", level=4)
-
-
-def main():
-
-    link, file_name = user_input()
-    exception_links = []
-    start = time.time()
-    k = 0
-
-    links_list = _get_all_research_links(link=link)
-
-    bar = IncrementalBar("Записано в файл", max=len(links_list))
-
-    document = Document()
-    document.add_heading(f"{file_name.capitalize()}", 0)
-
-    run = document.add_paragraph().add_run()
-    font = run.font
-    font.name = "Calibri"
-    font.size = Pt(14)
-
-    for i in links_list:
-
-        link = PUBMED_LINK + str(i)
-
-        soup = _get_research_page(link)
-
-        if soup:
-            try:
-                write_research_into_doc(soup, document, link)
-            except:
-                exception_links.append(link)
-
-        k += 1
-        bar.next()
-
-    document.save(f"{file_name}.docx")
-    bar.finish()
-
-    print(f"{k} исследований собрано.")
-    print(f"\nвремя выполнения - {time.time() - start} sec")
-
-    _write_missed_research(exception_links)
+    print(
+        f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
+    )
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        url, filename = user_input()
+    except UserInputError as e:
+        print(e)
+    else:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        asyncio.run(main(url, filename))
