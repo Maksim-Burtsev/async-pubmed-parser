@@ -74,25 +74,23 @@ def parse_title_and_abstact(research_page: str) -> TitleAbstract:
     return TitleAbstract(title, abstract)
 
 
-async def get_research_urls(url: str) -> list[str | None]:
+async def get_research_urls(url: str, session: ClientSession) -> list[str | None]:
     """Возвращает список с ссылками на исследования."""
-    async with ClientSession() as session:
-        async with session.get(url=url) as response:
-            if response.status == 200:
-                urls = parse_research_urls_from_page(await response.text())
-                return [f"{PUBMED_URL}{url.get('href')}" for url in urls]
-            return []
+    async with session.get(url=url) as response:
+        if response.status == 200:
+            urls = parse_research_urls_from_page(await response.text())
+            return [f"{PUBMED_URL}{url.get('href')}" for url in urls]
+        return []
 
 
-async def get_research_page(page_url: str) -> UrlPage:
+async def get_research_page(page_url: str, session: ClientSession) -> UrlPage:
     """Парсит страницу исследования. Если status code ответа != 200, то вместо содержимого страницы возвращается None."""
-    async with ClientSession() as session:
-        async with session.get(page_url) as response:
-            if response.status == 200:
-                page = await response.text()
-                return UrlPage(page_url, page)
-            else:
-                return UrlPage(page_url, None)
+    async with session.get(page_url) as response:
+        if response.status == 200:
+            page = await response.text()
+            return UrlPage(page_url, page)
+        else:
+            return UrlPage(page_url, None)
 
 
 def clean_abstract(abstract: list[str]) -> str:
@@ -116,23 +114,26 @@ def write_in_md_file(filename: str, text: str) -> None:
 async def main(url: str, filename: str) -> None:
     start = time.time()
 
-    try:
-        tasks = [get_research_urls(url.format(page)) for page in range(1, 6)]
-        research_urls: list[list[str | None]] = await asyncio.gather(*tasks)
-    except ParseDataError as e:
-        print(e)
-        return
-    except aiohttp.client_exceptions.InvalidURL:
-        print("Введите правильную ссылку!")
-        return
+    async with ClientSession() as session:
+        try:
+            tasks = [
+                get_research_urls(url.format(page), session) for page in range(1, 6)
+            ]
+            research_urls: list[list[str | None]] = await asyncio.gather(*tasks)
+        except ParseDataError as e:
+            print(e)
+            return
+        except aiohttp.client_exceptions.InvalidURL:
+            print("Введите правильную ссылку!")
+            return
 
-    all_urls = []
-    for urls in research_urls:
-        all_urls.extend(urls)
-    print("\nСсылки на исследования собраны.\nНачинается сбор данных...")
+        all_urls = []
+        for urls in research_urls:
+            all_urls.extend(urls)
+        print("\nСсылки на исследования собраны.\nНачинается сбор данных...")
 
-    tasks = [get_research_page(research_url) for research_url in all_urls]
-    research_data: list[UrlPage] = await asyncio.gather(*tasks)
+        tasks = [get_research_page(research_url, session) for research_url in all_urls]
+        research_data: list[UrlPage] = await asyncio.gather(*tasks)
 
     print("\nДанные собраны!\nПодготовка и запись в файл...")
 
