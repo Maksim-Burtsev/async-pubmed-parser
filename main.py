@@ -117,7 +117,7 @@ async def main(url: str, filename: str) -> None:
     start = time.time()
 
     try:
-        tasks = [get_research_urls(url.format(page)) for page in range(1, 4)]
+        tasks = [get_research_urls(url.format(page)) for page in range(1, 6)]
         research_urls: list[list[str | None]] = await asyncio.gather(*tasks)
     except ParseDataError as e:
         print(e)
@@ -146,14 +146,19 @@ async def main(url: str, filename: str) -> None:
             formatted_research.append(
                 f"## **{title}**\n*{url}*<br>{clean_abstract(abstract)}\n"
             )
-    if skipped_urls:
-        print(f"\nБыло пропущенно {len(skipped_urls)} исследований.")
 
     write_in_md_file(filename, text="".join(formatted_research))
 
     print(
         f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
     )
+
+    if skipped_urls:
+        print(
+            f"\nБыло пропущенно {len(skipped_urls)} исследований. Вот ссылки на них:\n"
+        )
+        for url in skipped_urls:
+            print(url)
 
 
 if __name__ == "__main__":
