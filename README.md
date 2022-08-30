@@ -30,7 +30,7 @@ https://pubmed.ncbi.nlm.nih.gov/?term=heart&filter=simsearch1.fha&filter=years.2
 python main.py
 ```
 
-**Далее происходит ввод данных:**
+**Далее происходит ввод данных и запуск программы:**
 
 ``` Ссылка: ``` https://pubmed.ncbi.nlm.nih.gov/?term=heart&filter=simsearch1.fha&filter=years.2017-2022
 
