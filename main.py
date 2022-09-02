@@ -1,6 +1,7 @@
 import re
 import time
 import asyncio
+import validators
 from typing import NamedTuple
 
 import aiohttp
@@ -46,7 +47,7 @@ class Editor:
         return "".join(abstract)
 
     def format_research(
-        self, title: str, cleaned_abstract: str, file_exct: str = ".md"
+        self, title: str, url: str, cleaned_abstract: str, file_exct: str = ".md"
     ) -> str:
         """if file_exct == ..."""
         return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
@@ -61,20 +62,51 @@ class Writer:
             f.write(text)
 
 
-def user_input() -> UserInput:
+class Url:
+    def __get__(self, instance, owner=None):
+        return self.value
+
+    def __set__(self, instance, value):
+        if value:
+            if validators.url(value) and "https://pubmed.ncbi.nlm.nih.gov/?" in value:
+                self.value = value
+                return
+            raise UserInputError("Неправильная ссылка.")
+        raise UserInputError("Пустая строка вместо ссылки.")
+
+
+class Filename:
+    def __get__(self, instance, owner=None):
+        return self.value
+
+    def __set__(self, instance, value):
+        if value:
+            raw_filename = value.strip().replace(" ", "_")
+            clean_filename = re.sub(r"(?u)[^-\w.]", "", raw_filename)
+            if clean_filename:
+                self.value = clean_filename
+                return
+            raise UserInputError("Файл состоит из недопустимых символов.")
+
+        raise UserInputError("Пустая строка вместо имени файла.")
+
+
+class Input:
+
+    url = Url()
+    filename = Filename()
+
+    def __init__(self, url: str, filename: str) -> None:
+        self.url = url
+        self.filename = filename
+
+
+def user_input() -> Input:
     """Получения ввода пользователя."""
-    # TODO validate url and filename
-    def not_empty_string(string: str) -> None:
-        if not string:
-            raise UserInputError("\nПустая строка вместо ссылки!")
-
     url = input("Ссылка: ").strip()
-    not_empty_string(url)
-
     filename = input("Как назвать файл? ")
-    not_empty_string(filename)
 
-    return UserInput(url + "&page={}", filename)
+    return Input(url + "&page={}", filename)
 
 
 def parse_research_urls_from_page(html_page: str) -> list[str]:
@@ -157,7 +189,7 @@ async def main(url: str, filename: str, editor: Editor, writer: Writer) -> None:
             skipped_urls.append(url)
         else:
             formatted_research.append(
-                editor.format_research(title, editor.clean_abstract(abstract))
+                editor.format_research(title, url, editor.clean_abstract(abstract))
             )
 
     writer.write_in_md_file(filename, text="".join(formatted_research))
@@ -176,10 +208,10 @@ async def main(url: str, filename: str, editor: Editor, writer: Writer) -> None:
 
 if __name__ == "__main__":
     try:
-        url, filename = user_input()
+        input_ = user_input()
     except UserInputError as e:
         print(e)
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         editor, writer = Editor(), Writer()
-        asyncio.run(main(url, filename, editor, writer))
+        asyncio.run(main(input_.url, input_.filename, editor, writer))
