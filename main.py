@@ -33,16 +33,46 @@ class TitleAbstract(NamedTuple):
     abstract: list[str]
 
 
+class Editor:
+    def clean_abstract(self, abstract: list[str]) -> str:
+        """Очищает абстракт от служебных символов. Изначально абстракт представляет собой список абзацев."""
+        if len(abstract) == 1:
+            abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
+            return "".join(abstract)
+
+        for i in range(len(abstract)):
+            abstract[i] = re.sub(r"\s+", " ", abstract[i].text) + "\n\n"
+
+        return "".join(abstract)
+
+    def format_research(
+        self, title: str, cleaned_abstract: str, file_exct: str = ".md"
+    ) -> str:
+        """if file_exct == ..."""
+        return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
+
+
+class Writer:
+    def write_in_md_file(
+        self, filename: str, text: str, file_exct: str = ".md"
+    ) -> None:
+        """Записывает текст в Markdown-файл."""
+        with open(f"{filename}.md", "w", encoding="utf-8") as f:
+            f.write(text)
+
+
 def user_input() -> UserInput:
     """Получения ввода пользователя."""
+    # TODO validate url and filename
+    def not_empty_string(string: str) -> None:
+        if not string:
+            raise UserInputError("\nПустая строка вместо ссылки!")
 
     url = input("Ссылка: ").strip()
-    if not url:
-        raise UserInputError("\nПустая строка вместо ссылки!")
+    not_empty_string(url)
 
     filename = input("Как назвать файл? ")
-    if not filename:
-        raise UserInputError("\nПустое имя файла!")
+    not_empty_string(filename)
 
     return UserInput(url + "&page={}", filename)
 
@@ -93,25 +123,7 @@ async def get_research_page(page_url: str, session: ClientSession) -> UrlPage:
             return UrlPage(page_url, None)
 
 
-def clean_abstract(abstract: list[str]) -> str:
-    """Очищает абстракт от служебных символов. Изначально абстракт представляет собой список абзацев."""
-    if len(abstract) == 1:
-        abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
-        return "".join(abstract)
-
-    for i in range(len(abstract)):
-        abstract[i] = re.sub(r"\s+", " ", abstract[i].text) + "\n\n"
-
-    return "".join(abstract)
-
-
-def write_in_md_file(filename: str, text: str) -> None:
-    """Записывает текст в Markdown-файл."""
-    with open(f"{filename}.md", "w", encoding="utf-8") as f:
-        f.write(text)
-
-
-async def main(url: str, filename: str) -> None:
+async def main(url: str, filename: str, editor: Editor, writer: Writer) -> None:
     start = time.time()
 
     async with ClientSession() as session:
@@ -145,10 +157,10 @@ async def main(url: str, filename: str) -> None:
             skipped_urls.append(url)
         else:
             formatted_research.append(
-                f"## **{title}**\n*{url}*<br>{clean_abstract(abstract)}\n"
+                editor.format_research(title, editor.clean_abstract(abstract))
             )
 
-    write_in_md_file(filename, text="".join(formatted_research))
+    writer.write_in_md_file(filename, text="".join(formatted_research))
 
     print(
         f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
@@ -169,4 +181,5 @@ if __name__ == "__main__":
         print(e)
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        asyncio.run(main(url, filename))
+        editor, writer = Editor(), Writer()
+        asyncio.run(main(url, filename, editor, writer))
