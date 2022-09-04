@@ -111,10 +111,10 @@ class Parser:
         try:
             div = soup.find("div", {"class": "search-results-chunks"})
             urls = div.findAll("a", {"class": "docsum-title"})
-        except:
+        except Exception as exc:
             raise ParseDataError(
                 "Проблема со сбором исследований, проверьте введённую ссылку!"
-            )
+            ) from exc
 
         return urls
 
@@ -125,8 +125,8 @@ class Parser:
             title = soup.find("h1", class_="heading-title").text.strip()
             abstract_ps = soup.find("div", class_="abstract-content selected")
             abstract = abstract_ps.findAll("p")
-        except:
-            raise ParseDataError("Ошибка при парсинге исследования!")
+        except Exception as exc:
+            raise ParseDataError("Ошибка при парсинге исследования!") from exc
 
         return TitleAbstract(title, abstract)
 
