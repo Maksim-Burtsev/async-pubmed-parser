@@ -11,7 +11,12 @@ from aiohttp import ClientSession
 
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 PAGES_AMOUNT = 5
-# TODO feature with type of filename
+
+
+FILE_FORMATS = {
+    "1": ".md",
+    "2": ".txt",
+}
 
 
 class UserInputError(ValueError):
@@ -66,14 +71,34 @@ class Filename:
         raise UserInputError("Пустая строка вместо имени файла.")
 
 
+class FileFormat:
+    def __get__(self, instance, owner=None) -> str:
+        return self.value
+
+    def __set__(self, instance, value: str) -> str:
+
+        if not value:
+            self.value = FILE_FORMATS["1"]
+            return
+
+        if value not in FILE_FORMATS.keys():
+            raise UserInputError(
+                "Неверный формат. Для выбора формата файла введите цифру одного из предложенных вариантов или пустую строку, чтобы выбрать Markdown."
+            )
+
+        self.value = FILE_FORMATS[value]
+
+
 class Input:
 
     url = Url()
     filename = Filename()
+    file_format = FileFormat()
 
-    def __init__(self, url: str, filename: str) -> None:
+    def __init__(self, url: str, filename: str, file_format: str) -> None:
         self.url = url
         self.filename = filename
+        self.file_format = file_format
 
 
 class Parser:
@@ -136,13 +161,16 @@ class Editor:
         return "".join(abstract)
 
     def format_research(
-        self, title: str, url: str, cleaned_abstract: str, file_exct: str = ".md"
+        self, title: str, url: str, cleaned_abstract: str, file_format: str = ".md"
     ) -> str:
-        """if file_exct == ..."""
-        return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
+        """Форматирует исследование для записи в файл"""
+        if file_format == ".md":
+            return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
+        elif file_format == ".txt":
+            return f"{title}\n\n{url}\n\n{cleaned_abstract}\n\n\n"
 
     def get_formatted_research(
-        self, research_data: list[UrlPage], parser: Parser
+        self, research_data: list[UrlPage], parser: Parser, file_format: str
     ) -> FormattedSkippedResearches:
         """Форматирует заголовок, ссылку и абстракт исследования для записи в файл: расставляет пробелы и переносы строк, размер шрифта  и т.д. Возвращает два списка - отформатированные и пропущенные публикации"""
         formatted_research, skipped_urls = [], []
@@ -153,17 +181,17 @@ class Editor:
                 skipped_urls.append(url)
             else:
                 formatted_research.append(
-                    editor.format_research(title, url, editor.clean_abstract(abstract))
+                    editor.format_research(
+                        title, url, editor.clean_abstract(abstract), file_format
+                    )
                 )
         return FormattedSkippedResearches(formatted_research, skipped_urls)
 
 
 class Writer:
-    def write_in_md_file(
-        self, filename: str, text: str, file_exct: str = ".md"
-    ) -> None:
-        """Записывает текст в Markdown-файл."""
-        with open(f"{filename}.md", "w", encoding="utf-8") as f:
+    def write_in_file(self, filename: str, text: str, file_format: str = ".md") -> None:
+        """Записывает текст в файл с указанным расширением."""
+        with open(f"{filename}{file_format}", "w", encoding="utf-8") as f:
             f.write(text)
 
 
@@ -171,8 +199,11 @@ def user_input() -> Input:
     """Получения ввода пользователя."""
     url = input("Ссылка: ").strip()
     filename = input("Как назвать файл? ")
+    file_format = input(
+        "В какой формат файла записать результат: .txt или .md?(по умолчанию будет .md)\n1 - .md\n2 - .txt\n"
+    )
 
-    return Input(url + "&page={}", filename)
+    return Input(url + "&page={}", filename, file_format)
 
 
 def print_skipped_urls(skipped_urls: list[str]) -> None:
@@ -182,7 +213,9 @@ def print_skipped_urls(skipped_urls: list[str]) -> None:
         print(url)
 
 
-async def main(url: str, filename: str, editor: Editor, writer: Writer) -> None:
+async def main(
+    url: str, filename: str, file_format: str, editor: Editor, writer: Writer
+) -> None:
     start = time.time()
 
     async with ClientSession() as session:
@@ -209,10 +242,12 @@ async def main(url: str, filename: str, editor: Editor, writer: Writer) -> None:
     print("\nДанные собраны!\nПодготовка и запись в файл...")
 
     formatted_research, skipped_urls = editor.get_formatted_research(
-        research_data, parser
+        research_data, parser, file_format
     )
 
-    writer.write_in_md_file(filename, text="".join(formatted_research))
+    writer.write_in_file(
+        filename, text="".join(formatted_research), file_format=file_format
+    )
 
     print(
         f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
@@ -230,4 +265,6 @@ if __name__ == "__main__":
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         editor, writer = Editor(), Writer()
-        asyncio.run(main(input_.url, input_.filename, editor, writer))
+        asyncio.run(
+            main(input_.url, input_.filename, input_.file_format, editor, writer)
+        )
