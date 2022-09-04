@@ -1,6 +1,7 @@
 import re
 import time
 import asyncio
+import functools
 import validators
 from itertools import chain
 from typing import NamedTuple
@@ -17,6 +18,19 @@ FILE_FORMATS = {
     "1": ".md",
     "2": ".txt",
 }
+
+
+def timer(func):
+    @functools.wraps(func)
+    async def inner(*args, **kwargs):
+        start = time.time()
+        result = await func(*args, **kwargs)
+        print(
+            f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
+        )
+        return result
+
+    return inner
 
 
 class UserInputError(ValueError):
@@ -213,10 +227,10 @@ def print_skipped_urls(skipped_urls: list[str]) -> None:
         print(url)
 
 
+@timer
 async def main(
     url: str, filename: str, file_format: str, editor: Editor, writer: Writer
 ) -> None:
-    start = time.time()
 
     async with ClientSession() as session:
         parser = Parser(session)
@@ -247,10 +261,6 @@ async def main(
 
     writer.write_in_file(
         filename, text="".join(formatted_research), file_format=file_format
-    )
-
-    print(
-        f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
     )
 
     if skipped_urls:
