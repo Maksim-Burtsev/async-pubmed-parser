@@ -13,6 +13,8 @@ from aiohttp import ClientSession
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 PAGES_AMOUNT = 5
 
+# TODO eng
+
 
 FILE_FORMATS = {
     "1": ".md",
@@ -178,10 +180,13 @@ class Editor:
         self, title: str, url: str, cleaned_abstract: str, file_format: str = ".md"
     ) -> str:
         """Форматирует исследование для записи в файл"""
-        if file_format == ".md":
-            return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
-        elif file_format == ".txt":
-            return f"{title}\n\n{url}\n\n{cleaned_abstract}\n\n\n"
+        match file_format:
+            case ".md":
+                return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
+            case ".txt":
+                return f"{title}\n\n{url}\n\n{cleaned_abstract}\n\n\n"
+            case _:
+                pass
 
     def get_formatted_research(
         self, research_data: list[UrlPage], parser: Parser, file_format: str
@@ -220,8 +225,10 @@ def user_input() -> Input:
     return Input(url + "&page={}", filename, file_format)
 
 
-def print_skipped_urls(skipped_urls: list[str]) -> None:
+def print_skipped_urls(skipped_urls: list[str] | None) -> None:
     """Печатает на экран список ссылок на пропущенные исследования"""
+    if not skipped_urls:
+        return
     print(f"\nБыло пропущенно {len(skipped_urls)} исследований. Вот ссылки на них:\n")
     for url in skipped_urls:
         print(url)
@@ -263,8 +270,7 @@ async def main(
         filename, text="".join(formatted_research), file_format=file_format
     )
 
-    if skipped_urls:
-        print_skipped_urls(skipped_urls)
+    print_skipped_urls(skipped_urls)
 
 
 if __name__ == "__main__":
