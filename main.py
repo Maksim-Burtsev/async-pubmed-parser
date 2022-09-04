@@ -13,8 +13,6 @@ from aiohttp import ClientSession
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 PAGES_AMOUNT = 5
 
-# TODO eng
-
 
 FILE_FORMATS = {
     "1": ".md",
@@ -67,8 +65,8 @@ class Url:
             if validators.url(value) and "https://pubmed.ncbi.nlm.nih.gov/?" in value:
                 self.value = value
                 return
-            raise UserInputError("Неправильная ссылка.")
-        raise UserInputError("Пустая строка вместо ссылки.")
+            raise UserInputError("Invalid URL.")
+        raise UserInputError("Empty string instead of URL.")
 
 
 class Filename:
@@ -82,9 +80,9 @@ class Filename:
             if clean_filename:
                 self.value = clean_filename
                 return
-            raise UserInputError("Файл состоит из недопустимых символов.")
+            raise UserInputError("Filename consists invalid characters.")
 
-        raise UserInputError("Пустая строка вместо имени файла.")
+        raise UserInputError("Empty string instead of filename.")
 
 
 class FileFormat:
@@ -99,7 +97,7 @@ class FileFormat:
 
         if value not in FILE_FORMATS.keys():
             raise UserInputError(
-                "Неверный формат. Для выбора формата файла введите цифру одного из предложенных вариантов или пустую строку, чтобы выбрать Markdown."
+                "Invalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
             )
 
         self.value = FILE_FORMATS[value]
@@ -122,31 +120,32 @@ class Parser:
         self.session = session
 
     def parse_research_urls_from_page(self, html_page: str) -> list[str]:
-        """Парсит ссылки на все исследования с одной страницы."""
+        """Parse urls to all studies from one page."""
         soup = BeautifulSoup(html_page, "html.parser")
         try:
             div = soup.find("div", {"class": "search-results-chunks"})
             urls = div.findAll("a", {"class": "docsum-title"})
         except Exception as exc:
             raise ParseDataError(
-                "Проблема со сбором исследований, проверьте введённую ссылку!"
+                "Problem with parse researches, please check entered URL for corectless!"
             ) from exc
 
         return urls
 
     def parse_title_and_abstact(self, research_page: str) -> TitleAbstract:
-        """Достаёт название и абстракт исследования из его html-страницы."""
+        """Get title and abstract of research from his html-page"""
         soup = BeautifulSoup(research_page, "html.parser")
         try:
             title = soup.find("h1", class_="heading-title").text.strip()
             abstract_ps = soup.find("div", class_="abstract-content selected")
             abstract = abstract_ps.findAll("p")
         except Exception as exc:
-            raise ParseDataError("Ошибка при парсинге исследования!") from exc
+            raise ParseDataError("Error when parsing a research!") from exc
 
         return TitleAbstract(title, abstract)
 
     async def get_research_urls(self, url: str) -> list[str | None]:
+        """Return a list with URL's of researches"""
         """Возвращает список с ссылками на исследования."""
         async with self.session.get(url=url) as response:
             if response.status == 200:
@@ -155,7 +154,7 @@ class Parser:
             return []
 
     async def get_research_page(self, page_url: str) -> UrlPage:
-        """Парсит страницу исследования. Если status code ответа != 200, то вместо содержимого страницы возвращается None."""
+        """Parse page of research. If response.status_code != 200, then instead of page content return's None."""
         async with self.session.get(page_url) as response:
             if response.status == 200:
                 page = await response.text()
@@ -166,7 +165,7 @@ class Parser:
 
 class Editor:
     def clean_abstract(self, abstract: list[str]) -> str:
-        """Очищает абстракт от служебных символов. Изначально абстракт представляет собой список абзацев."""
+        """Clean abstract from service characters. Initially abstract  is a list of paragraphs."""
         if len(abstract) == 1:
             abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
             return "".join(abstract)
@@ -179,7 +178,7 @@ class Editor:
     def format_research(
         self, title: str, url: str, cleaned_abstract: str, file_format: str = ".md"
     ) -> str:
-        """Форматирует исследование для записи в файл"""
+        """Format research to write in file."""
         match file_format:
             case ".md":
                 return f"## **{title}**\n*{url}*<br>{cleaned_abstract}\n"
@@ -191,7 +190,10 @@ class Editor:
     def get_formatted_research(
         self, research_data: list[UrlPage], parser: Parser, file_format: str
     ) -> FormattedSkippedResearches:
-        """Форматирует заголовок, ссылку и абстракт исследования для записи в файл: расставляет пробелы и переносы строк, размер шрифта  и т.д. Возвращает два списка - отформатированные и пропущенные публикации"""
+        """Parse title and abstract from html-page of research. Format them to write in file: add spaces, break lines and change size of fonts (for Mardown).
+
+        Return two lists - formatted and skipped researches.
+        """
         formatted_research, skipped_urls = [], []
         for url, research_page in research_data:
             try:
@@ -209,27 +211,28 @@ class Editor:
 
 class Writer:
     def write_in_file(self, filename: str, text: str, file_format: str = ".md") -> None:
-        """Записывает текст в файл с указанным расширением."""
+        """Write test into file with the passed extension."""
         with open(f"{filename}{file_format}", "w", encoding="utf-8") as f:
             f.write(text)
 
 
 def user_input() -> Input:
-    """Получения ввода пользователя."""
-    url = input("Ссылка: ").strip()
-    filename = input("Как назвать файл? ")
+    """Getting user's input."""
+    url = input("URL: ").strip()
+    filename = input("Filename: ")
     file_format = input(
-        "В какой формат файла записать результат: .txt или .md?(по умолчанию будет .md)\n1 - .md\n2 - .txt\n"
+        "What type of output file: .txt or .md?(default is .md)\n1 - .md\n2 - .txt\n"
     )
 
     return Input(url + "&page={}", filename, file_format)
 
 
 def print_skipped_urls(skipped_urls: list[str] | None) -> None:
-    """Печатает на экран список ссылок на пропущенные исследования"""
+    """Print on the screen list of skipped researches."""
     if not skipped_urls:
         return
-    print(f"\nБыло пропущенно {len(skipped_urls)} исследований. Вот ссылки на них:\n")
+
+    print(f"\nWas skipped {len(skipped_urls)} research. Here are URL's to them:\n")
     for url in skipped_urls:
         print(url)
 
@@ -251,16 +254,18 @@ async def main(
             print(e)
             return
         except aiohttp.client_exceptions.InvalidURL:
-            print("Введите правильную ссылку!")
+            print("Enter correct URL!")
             return
 
-        all_urls = list(chain(*research_urls))
-        print("\nСсылки на исследования собраны.\nНачинается сбор данных...")
+        all_urls = list(chain(*research_urls))  # [[.], [..],] -> [., ..,]
+        print(
+            "\nResearch links have been successfully collected.\nData collection begins..."
+        )
 
         tasks = [parser.get_research_page(research_url) for research_url in all_urls]
         research_data: list[UrlPage] = await asyncio.gather(*tasks)
 
-    print("\nДанные собраны!\nПодготовка и запись в файл...")
+    print("\nData successfully collected!\nPreparing and writing to file...")
 
     formatted_research, skipped_urls = editor.get_formatted_research(
         research_data, parser, file_format
