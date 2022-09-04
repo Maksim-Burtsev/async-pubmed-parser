@@ -26,7 +26,7 @@ def timer(func):
         start = time.time()
         result = await func(*args, **kwargs)
         print(
-            f"\nДанные успешно записаны!\nВремя работы программы составило {time.time()-start:.1f} сек."
+            f"\nThe data was successfully written!\nThe running time was {time.time()-start:.1f} sec."
         )
         return result
 
@@ -89,11 +89,11 @@ class FileFormat:
     def __get__(self, instance, owner=None) -> str:
         return self.value
 
-    def __set__(self, instance, value: str) -> str:
+    def __set__(self, instance, value: str) -> None:
 
         if not value:
             self.value = FILE_FORMATS["1"]
-            return
+            return None
 
         if value not in FILE_FORMATS.keys():
             raise UserInputError(
@@ -129,8 +129,7 @@ class Parser:
             raise ParseDataError(
                 "Problem with parse researches, please check entered URL for corectless!"
             ) from exc
-
-        return urls
+        return [url.get("href") for url in urls]
 
     def parse_title_and_abstact(self, research_page: str) -> TitleAbstract:
         """Get title and abstract of research from his html-page"""
@@ -141,16 +140,14 @@ class Parser:
             abstract = abstract_ps.findAll("p")
         except Exception as exc:
             raise ParseDataError("Error when parsing a research!") from exc
-
-        return TitleAbstract(title, abstract)
+        return TitleAbstract(title, [par.text for par in abstract])
 
     async def get_research_urls(self, url: str) -> list[str | None]:
         """Return a list with URL's of researches"""
-        """Возвращает список с ссылками на исследования."""
         async with self.session.get(url=url) as response:
             if response.status == 200:
                 urls = self.parse_research_urls_from_page(await response.text())
-                return [f"{PUBMED_URL}{url.get('href')}" for url in urls]
+                return [f"{PUBMED_URL}{url}" for url in urls]
             return []
 
     async def get_research_page(self, page_url: str) -> UrlPage:
@@ -159,25 +156,19 @@ class Parser:
             if response.status == 200:
                 page = await response.text()
                 return UrlPage(page_url, page)
-            else:
-                return UrlPage(page_url, None)
+            return UrlPage(page_url, None)
 
 
 class Editor:
     def clean_abstract(self, abstract: list[str]) -> str:
         """Clean abstract from service characters. Initially abstract  is a list of paragraphs."""
-        if len(abstract) == 1:
-            abstract[0] = re.sub(r"\s+", " ", abstract[0].text)
-            return "".join(abstract)
-
         for i in range(len(abstract)):
-            abstract[i] = re.sub(r"\s+", " ", abstract[i].text) + "\n\n"
-
+            abstract[i] = re.sub(r"\s+", " ", abstract[i]) + "\n\n"
         return "".join(abstract)
 
     def format_research(
-        self, title: str, url: str, cleaned_abstract: str, file_format: str = ".md"
-    ) -> str:
+        self, title: str, url: str, cleaned_abstract: str, file_format: str
+    ) -> str | None:
         """Format research to write in file."""
         match file_format:
             case ".md":
@@ -249,7 +240,7 @@ async def main(
                 parser.get_research_urls(url.format(page))
                 for page in range(1, PAGES_AMOUNT + 1)
             ]
-            research_urls: list[list[str | None]] = await asyncio.gather(*tasks)
+            research_urls = await asyncio.gather(*tasks)
         except ParseDataError as e:
             print(e)
             return
@@ -263,7 +254,7 @@ async def main(
         )
 
         tasks = [parser.get_research_page(research_url) for research_url in all_urls]
-        research_data: list[UrlPage] = await asyncio.gather(*tasks)
+        research_data = await asyncio.gather(*tasks)
 
     print("\nData successfully collected!\nPreparing and writing to file...")
 
