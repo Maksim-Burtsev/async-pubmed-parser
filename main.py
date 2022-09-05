@@ -19,6 +19,11 @@ FILE_FORMATS = {
     "2": ".txt",
 }
 
+# TODO flake8
+# TODO validate URL (for include ?q= and lenghts)
+# TODO return (None) -> return error when programm os crushing
+# TODO input pages amount
+
 
 def timer(func):
     @functools.wraps(func)
@@ -61,12 +66,15 @@ class Url:
         return self.value
 
     def __set__(self, instance, value: str) -> None:
-        if value:
-            if validators.url(value) and "https://pubmed.ncbi.nlm.nih.gov/?" in value:
-                self.value = value
-                return
+        if not value:
+            raise UserInputError("Empty string instead of URL.")
+
+        if not validators.url(value) or not value.startswith(
+            "https://pubmed.ncbi.nlm.nih.gov/?"
+        ):
             raise UserInputError("Invalid URL.")
-        raise UserInputError("Empty string instead of URL.")
+
+        self.value = value
 
 
 class Filename:
@@ -95,12 +103,12 @@ class FileFormat:
             self.value = FILE_FORMATS["1"]
             return None
 
-        if value not in FILE_FORMATS.keys():
+        try:
+            self.value = FILE_FORMATS[value]
+        except KeyError as exc:
             raise UserInputError(
                 "Invalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
-            )
-
-        self.value = FILE_FORMATS[value]
+            ) from exc
 
 
 class Input:
@@ -122,10 +130,10 @@ class Parser:
     def parse_research_urls_from_page(self, html_page: str) -> list[str]:
         """Parse urls to all studies from one page."""
         soup = BeautifulSoup(html_page, "html.parser")
+        div = soup.find("div", {"class": "search-results-chunks"})
         try:
-            div = soup.find("div", {"class": "search-results-chunks"})
             urls = div.findAll("a", {"class": "docsum-title"})
-        except Exception as exc:
+        except AttributeError as exc:
             raise ParseDataError(
                 "Problem with parse researches, please check entered URL for corectless!"
             ) from exc
@@ -145,7 +153,7 @@ class Parser:
     async def get_research_urls(self, url: str) -> list[str | None]:
         """Return a list with URL's of researches"""
         async with self.session.get(url=url) as response:
-            if response.status == 200:
+            if response.ok:
                 urls = self.parse_research_urls_from_page(await response.text())
                 return [f"{PUBMED_URL}{url}" for url in urls]
             return []
@@ -153,7 +161,7 @@ class Parser:
     async def get_research_page(self, page_url: str) -> UrlPage:
         """Parse page of research. If response.status_code != 200, then instead of page content return's None."""
         async with self.session.get(page_url) as response:
-            if response.status == 200:
+            if response.ok:
                 page = await response.text()
                 return UrlPage(page_url, page)
             return UrlPage(page_url, None)
