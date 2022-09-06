@@ -5,6 +5,7 @@ import asyncio
 import functools
 import validators
 from typing import NamedTuple
+from dataclasses import dataclass
 
 import aiohttp
 from bs4 import BeautifulSoup
@@ -12,6 +13,7 @@ from aiohttp import ClientSession
 
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 DEFAULT_PAGES_AMOUNT = 5
+DEFAULT_FILE_FORMAT = ".md"
 
 
 FILE_FORMATS = {
@@ -60,7 +62,7 @@ def timer(func):
         start = time.time()
         result = await func(*args, **kwargs)
         print(
-            f"\nSuccess! Now you can view collected researches in your file.\nThe running time was {time.time()-start:.1f} sec."
+            f"\nSuccess!\nNow you can view collected researches in your file.\n\nThe running time was {time.time()-start:.1f} sec."
         )
         return result
 
@@ -100,88 +102,68 @@ def print_skipped_urls(
             print(url)
 
 
-class Url:
-    def __get__(self, instance, owner=None) -> str:
-        return self.value
+def get_validated_url(url: str) -> str:
+    if not url:
+        raise UserInputError("\nEmpty string instead of URL.")
 
-    def __set__(self, instance, value: str) -> None:
-        if not value:
-            raise UserInputError("Empty string instead of URL.")
+    if (
+        not validators.url(url)
+        or not url.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
+        or "term=" not in url
+    ):
+        raise UserInputError("\nInvalid URL.")
 
-        if (
-            not validators.url(value)
-            or not value.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
-            or "term=" not in value
-        ):
-            raise UserInputError("Invalid URL.")
-
-        self.value = value.strip().replace(" ", "+")
+    return url.strip().replace(" ", "+")
 
 
-class Filename:
-    def __get__(self, instance, owner=None) -> str:
-        return self.value
+def get_validated_filename(filename: str):
+    if not filename:
+        raise UserInputError("\nEmpty string instead of filename.")
 
-    def __set__(self, instance, value: str) -> None:
-        if value:
-            raw_filename = value.strip().replace(" ", "_")
-            clean_filename = re.sub(r"(?u)[^-\w.]", "", raw_filename)
-            if clean_filename:
-                self.value = clean_filename
-                return
-            raise UserInputError("Filename consists invalid characters.")
-
-        raise UserInputError("Empty string instead of filename.")
+    raw_filename = filename.strip().replace(" ", "_")
+    clean_filename = re.sub(r"(?u)[^-\w.]", "", raw_filename)
+    if clean_filename:
+        return clean_filename
+    raise UserInputError("\nFilename consists invalid characters.")
 
 
-class FileFormat:
-    def __get__(self, instance, owner=None) -> str:
-        return self.value
+def get_validate_file_format(file_format_code: str) -> str:
+    if not file_format_code:
+        return DEFAULT_FILE_FORMAT
 
-    def __set__(self, instance, value: str) -> None:
-
-        if not value:
-            self.value = FILE_FORMATS["1"]
-            return None
-
-        try:
-            self.value = FILE_FORMATS[value]
-        except KeyError as exc:
-            raise UserInputError(
-                "Invalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
-            ) from exc
+    try:
+        return FILE_FORMATS[file_format_code]
+    except KeyError as exc:
+        raise UserInputError(
+            "\nInvalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
+        ) from exc
 
 
-class PagesAmount:
-    def __get__(self, instance, owner=None) -> int:
-        return self.value
+def get_validated_pages_amount(pages_amount: str | int) -> int:
+    try:
+        pages_amount = int(pages_amount)
+    except ValueError as exc:
+        raise UserInputError("\nPages amount must be digit.") from exc
 
-    def __set__(self, instance, value: int) -> None:
-        try:
-            value = int(value)
-        except ValueError as exc:
-            raise UserInputError("Pages amount must be digit.") from exc
+    if not 1 <= pages_amount <= 1_000:
+        raise UserInputError("\nPage amout must be in between [1, 1000].")
 
-        if not 1 <= value <= 1_000:
-            raise UserInputError("Page amout must be in between [1, 1000].")
-
-        self.value = value
+    return pages_amount
 
 
+@dataclass
 class Input:
+    url: str
+    filename: str
+    file_format_code: str | int
+    pages_amount: int
+    file_format: str | None = None
 
-    url = Url()
-    filename = Filename()
-    file_format = FileFormat()
-    pages_amount = PagesAmount()
-
-    def __init__(
-        self, url: str, filename: str, file_format: str, pages_amount: int | str
-    ) -> None:
-        self.url = url
-        self.filename = filename
-        self.file_format = file_format
-        self.pages_amount = pages_amount
+    def __post_init__(self):
+        self.url = get_validated_url(self.url)
+        self.filename = get_validated_filename(self.filename)
+        self.file_format = get_validate_file_format(self.file_format_code)
+        self.pages_amount = get_validated_pages_amount(self.pages_amount)
 
 
 class Parser:
@@ -196,7 +178,7 @@ class Parser:
             urls = div.findAll("a", {"class": "docsum-title"})
         except AttributeError as exc:
             raise ParseDataError(
-                "Problem with parse researches, please check entered URL for corectless!"
+                "\nProblem with parse researches, please check entered URL for corectless!"
             ) from exc
         return [url.get("href") for url in urls]
 
@@ -208,7 +190,7 @@ class Parser:
             abstract_ps = soup.find("div", class_="abstract-content selected")
             abstract = abstract_ps.findAll("p")
         except Exception as exc:
-            raise ParseDataError("Error when parsing a research!") from exc
+            raise ParseDataError("\nError when parsing a research!") from exc
         return TitleAbstract(title, [par.text for par in abstract])
 
     async def get_research_urls(self, url: str) -> list[str | None] | str:
@@ -280,7 +262,7 @@ def user_input() -> Input:
     """Getting user's input."""
     url = input("URL: ").strip()
     filename = input("Filename: ")
-    file_format = input(
+    file_format_code = input(
         "What type of output file: .txt or .md?(default is .md)\n1 - .md\n2 - .txt\n"
     )
 
@@ -292,7 +274,8 @@ def user_input() -> Input:
         in ["yes", "y", "ye", "ys"]
         else DEFAULT_PAGES_AMOUNT
     )
-    return Input(url + "&page={}", filename, file_format, pages_amount)
+    return Input(url + "&page={}", filename, file_format_code, pages_amount)
+    # return Input(url + "&page={}", filename, file_format, pages_amount)
 
 
 @timer
@@ -324,7 +307,7 @@ async def main(
             research_urls
         )  # [[.], [..],] -> [., ..,]
         if not all_urls:
-            raise UserInputError("There is no research on your URL. Please check it!")
+            raise UserInputError("\nThere is no research on your URL. Please check it!")
 
         print(
             "\nResearch links have been successfully collected.\nData collection begins..."
