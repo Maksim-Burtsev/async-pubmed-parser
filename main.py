@@ -19,8 +19,7 @@ FILE_FORMATS = {
     "2": ".txt",
 }
 
-# TODO input pages amount
-# TODO if not formatted_researches
+#TODO Dataclass insted if Input class with descriptors
 # https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
 
 
@@ -277,10 +276,8 @@ class Editor:
 
 
 class Writer:
-    def write_in_file(self, filename: str, text: str, file_format: str = ".md") -> None:
+    def write_in_file(self, filename: str, text: str, file_format) -> None:
         """Write test into file with the passed extension."""
-        if not text:
-            return
         with open(f"{filename}{file_format}", "w", encoding="utf-8") as f:
             f.write(text)
 
@@ -348,10 +345,14 @@ async def main(
     formatted_research, skipped_researches = editor.get_formatted_research(
         research_data, parser, file_format
     )
-
-    writer.write_in_file(
-        filename, text="".join(formatted_research), file_format=file_format
-    )
+    if formatted_research:
+        writer.write_in_file(
+            filename, text="".join(formatted_research), file_format=file_format
+        )
+    else:
+        print(
+            "There is nothing to write in file by your URL. Please check it on correct and look below on URL's which was skipped."
+        )
 
     print_skipped_urls(skipped_pages, skipped_researches)
 
