@@ -102,68 +102,81 @@ def print_skipped_urls(
             print(url)
 
 
-def get_validated_url(url: str) -> str:
-    if not url:
-        raise UserInputError("\nEmpty string instead of URL.")
+class InputValidator:
+    def get_url(self, url: str) -> str:
+        """Validate url.
 
-    if (
-        not validators.url(url)
-        or not url.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
-        or "term=" not in url
-    ):
-        raise UserInputError("\nInvalid URL.")
+        If its valid replace all spaces on the pluses.
 
-    return url.strip().replace(" ", "+")
+        ...?term=very long term -> ...?term=very+long+term"""
+        if not url:
+            raise UserInputError("\nEmpty string instead of URL.")
 
+        if (
+            not validators.url(url)
+            or not url.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
+            or "term=" not in url
+        ):
+            raise UserInputError("\nInvalid URL.")
 
-def get_validated_filename(filename: str):
-    if not filename:
-        raise UserInputError("\nEmpty string instead of filename.")
+        return url.strip().replace(" ", "+")
 
-    raw_filename = filename.strip().replace(" ", "_")
-    clean_filename = re.sub(r"(?u)[^-\w.]", "", raw_filename)
-    if clean_filename:
-        return clean_filename
-    raise UserInputError("\nFilename consists invalid characters.")
+    def get_filename(self, filename: str):
+        """Validate filename.
 
+        If its valid replace all space on '_' and  remove all illegal for name sybmols."""
+        if not filename:
+            raise UserInputError("\nEmpty string instead of filename.")
 
-def get_validate_file_format(file_format_code: str) -> str:
-    if not file_format_code:
-        return DEFAULT_FILE_FORMAT
+        raw_filename = filename.strip().replace(" ", "_")
+        clean_filename = re.sub(r"(?u)[^-\w.]", "", raw_filename)
+        if clean_filename:
+            return clean_filename
+        raise UserInputError("\nFilename consists invalid characters.")
 
-    try:
-        return FILE_FORMATS[file_format_code]
-    except KeyError as exc:
-        raise UserInputError(
-            "\nInvalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
-        ) from exc
+    def get_file_format(self, file_format_code: str) -> str:
+        """Return file format based on user's input code."""
+        if not file_format_code:
+            return DEFAULT_FILE_FORMAT
 
+        try:
+            return FILE_FORMATS[file_format_code]
+        except KeyError as exc:
+            raise UserInputError(
+                "\nInvalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
+            ) from exc
 
-def get_validated_pages_amount(pages_amount: str | int) -> int:
-    try:
-        pages_amount = int(pages_amount)
-    except ValueError as exc:
-        raise UserInputError("\nPages amount must be digit.") from exc
+    def get_pages_amount(self, pages_amount: str | int) -> int:
+        """Validate and return input pages amount."""
+        try:
+            pages_amount = int(pages_amount)
+        except ValueError as exc:
+            raise UserInputError("\nPages amount must be digit.") from exc
 
-    if not 1 <= pages_amount <= 1_000:
-        raise UserInputError("\nPage amout must be in between [1, 1000].")
+        if not 1 <= pages_amount <= 1_000:
+            raise UserInputError("\nPage amout must be in between [1, 1000].")
 
-    return pages_amount
+        return pages_amount
 
 
 @dataclass
 class Input:
+    """Dataclass which validate, format and save user input.
+
+    File format are is assigned in post init method based on the user code response.
+    """
+
     url: str
     filename: str
     file_format_code: str | int
     pages_amount: int
-    file_format: str | None = None
+    file_format: str = ""
 
-    def __post_init__(self):
-        self.url = get_validated_url(self.url)
-        self.filename = get_validated_filename(self.filename)
-        self.file_format = get_validate_file_format(self.file_format_code)
-        self.pages_amount = get_validated_pages_amount(self.pages_amount)
+    def __post_init__(self, validator=InputValidator()):
+        self.url = validator.get_url(self.url)
+        self.filename = validator.get_filename(self.filename)
+        self.file_format = validator.get_file_format(self.file_format_code)
+        self.pages_amount = validator.get_pages_amount(self.pages_amount)
 
 
 class Parser:
