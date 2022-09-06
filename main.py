@@ -1,9 +1,9 @@
 import re
+import sys
 import time
 import asyncio
 import functools
 import validators
-from itertools import chain
 from typing import NamedTuple
 
 import aiohttp
@@ -20,29 +20,20 @@ FILE_FORMATS = {
 }
 
 # TODO flake8
-# TODO validate URL (for include ?q= and lenghts)
-# TODO return (None) -> return error when programm os crushing
 # TODO input pages amount
+# TODO if not formatted_researches
+# https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
 
 
-def timer(func):
-    @functools.wraps(func)
-    async def inner(*args, **kwargs):
-        start = time.time()
-        result = await func(*args, **kwargs)
-        print(
-            f"\nThe data was successfully written!\nThe running time was {time.time()-start:.1f} sec."
-        )
-        return result
-
-    return inner
+class ParseDataError(Exception):
+    pass
 
 
 class UserInputError(ValueError):
     pass
 
 
-class ParseDataError(Exception):
+class FileFormatError(ValueError):
     pass
 
 
@@ -51,14 +42,70 @@ class UrlPage(NamedTuple):
     html_page: str | None
 
 
+class UrlStatus(NamedTuple):
+    url: str
+    status: int
+
+
 class TitleAbstract(NamedTuple):
     title: str
     abstract: list[str]
 
 
+class AllUrlsSkippedPages(NamedTuple):
+    all_urls: list[str | None]
+    skipped_pages: list[UrlStatus | None]
+
+
 class FormattedSkippedResearches(NamedTuple):
     formatted_research: list[str]
     skipped_research: list[str | None]
+
+
+def timer(func):
+    @functools.wraps(func)
+    async def inner(*args, **kwargs):
+        start = time.time()
+        result = await func(*args, **kwargs)
+        print(
+            f"\nSuccess! Now you can view collected researches in your file.\nThe running time was {time.time()-start:.1f} sec."
+        )
+        return result
+
+    return inner
+
+
+def chain_research_urls(urls: list[list[str | None]] | str) -> AllUrlsSkippedPages:
+    """Join nested lists with researches into a single list.
+    
+    [[...], [...], [...]] -> [..., ..., ...]
+
+    All skipped pages (str's in list) saved in separeted list.
+    """
+
+    all_urls, skipped_pages = [], []
+    for url in urls:
+        if isinstance(url, str):
+            skipped_pages.append(url)
+        else:
+            all_urls.extend(url)
+
+    return AllUrlsSkippedPages(all_urls, skipped_pages)
+
+
+def print_skipped_urls(
+    skipped_pages: list[str | None], skipped_urls: list[str | None]
+) -> None:
+    """Print on the screen list of skipped researches."""
+    if skipped_pages:
+        print(f"\nWas skipped {len(skipped_pages)} pages. Here are URL's to them:\n")
+        for url in skipped_pages:
+            print(url)
+
+    if skipped_urls:
+        print(f"\nWas skipped {len(skipped_urls)} research. Here are URL's to them:\n")
+        for url in skipped_urls:
+            print(url)
 
 
 class Url:
@@ -69,12 +116,14 @@ class Url:
         if not value:
             raise UserInputError("Empty string instead of URL.")
 
-        if not validators.url(value) or not value.startswith(
-            "https://pubmed.ncbi.nlm.nih.gov/?"
+        if (
+            not validators.url(value)
+            or not value.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
+            or not "term=" in value
         ):
             raise UserInputError("Invalid URL.")
 
-        self.value = value
+        self.value = value.strip().replace(" ", "+")
 
 
 class Filename:
@@ -127,7 +176,7 @@ class Parser:
     def __init__(self, session: ClientSession) -> None:
         self.session = session
 
-    def parse_research_urls_from_page(self, html_page: str) -> list[str]:
+    def parse_research_urls_from_page(self, html_page: str) -> list[str | None]:
         """Parse urls to all studies from one page."""
         soup = BeautifulSoup(html_page, "html.parser")
         div = soup.find("div", {"class": "search-results-chunks"})
@@ -150,18 +199,18 @@ class Parser:
             raise ParseDataError("Error when parsing a research!") from exc
         return TitleAbstract(title, [par.text for par in abstract])
 
-    async def get_research_urls(self, url: str) -> list[str | None]:
+    async def get_research_urls(self, url: str) -> list[str | None] | str:
         """Return a list with URL's of researches"""
         async with self.session.get(url=url) as response:
-            if response.ok:
+            if response.status == 200:
                 urls = self.parse_research_urls_from_page(await response.text())
                 return [f"{PUBMED_URL}{url}" for url in urls]
-            return []
+            return url
 
     async def get_research_page(self, page_url: str) -> UrlPage:
         """Parse page of research. If response.status_code != 200, then instead of page content return's None."""
         async with self.session.get(page_url) as response:
-            if response.ok:
+            if response.status == 200:
                 page = await response.text()
                 return UrlPage(page_url, page)
             return UrlPage(page_url, None)
@@ -184,7 +233,7 @@ class Editor:
             case ".txt":
                 return f"{title}\n\n{url}\n\n{cleaned_abstract}\n\n\n"
             case _:
-                pass
+                raise FileFormatError("Unsupported file format.")
 
     def get_formatted_research(
         self, research_data: list[UrlPage], parser: Parser, file_format: str
@@ -211,6 +260,8 @@ class Editor:
 class Writer:
     def write_in_file(self, filename: str, text: str, file_format: str = ".md") -> None:
         """Write test into file with the passed extension."""
+        if not text:
+            return
         with open(f"{filename}{file_format}", "w", encoding="utf-8") as f:
             f.write(text)
 
@@ -224,16 +275,6 @@ def user_input() -> Input:
     )
 
     return Input(url + "&page={}", filename, file_format)
-
-
-def print_skipped_urls(skipped_urls: list[str] | None) -> None:
-    """Print on the screen list of skipped researches."""
-    if not skipped_urls:
-        return
-
-    print(f"\nWas skipped {len(skipped_urls)} research. Here are URL's to them:\n")
-    for url in skipped_urls:
-        print(url)
 
 
 @timer
@@ -251,12 +292,17 @@ async def main(
             research_urls = await asyncio.gather(*tasks)
         except ParseDataError as e:
             print(e)
-            return
+            sys.exit()
         except aiohttp.client_exceptions.InvalidURL:
             print("Enter correct URL!")
-            return
+            sys.exit()
 
-        all_urls = list(chain(*research_urls))  # [[.], [..],] -> [., ..,]
+        all_urls, skipped_pages = chain_research_urls(
+            research_urls
+        )  # [[.], [..],] -> [., ..,]
+        if not all_urls:
+            raise UserInputError("There is no research on your URL. Please check it!")
+            
         print(
             "\nResearch links have been successfully collected.\nData collection begins..."
         )
@@ -266,7 +312,7 @@ async def main(
 
     print("\nData successfully collected!\nPreparing and writing to file...")
 
-    formatted_research, skipped_urls = editor.get_formatted_research(
+    formatted_research, skipped_researches = editor.get_formatted_research(
         research_data, parser, file_format
     )
 
@@ -274,7 +320,7 @@ async def main(
         filename, text="".join(formatted_research), file_format=file_format
     )
 
-    print_skipped_urls(skipped_urls)
+    print_skipped_urls(skipped_pages, skipped_researches)
 
 
 if __name__ == "__main__":
