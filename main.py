@@ -11,7 +11,7 @@ from bs4 import BeautifulSoup
 from aiohttp import ClientSession
 
 PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
-PAGES_AMOUNT = 5
+DEFAULT_PAGES_AMOUNT = 5
 
 
 FILE_FORMATS = {
@@ -19,7 +19,6 @@ FILE_FORMATS = {
     "2": ".txt",
 }
 
-# TODO flake8
 # TODO input pages amount
 # TODO if not formatted_researches
 # https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
@@ -77,7 +76,7 @@ def timer(func):
 
 def chain_research_urls(urls: list[list[str | None]] | str) -> AllUrlsSkippedPages:
     """Join nested lists with researches into a single list.
-    
+
     [[...], [...], [...]] -> [..., ..., ...]
 
     All skipped pages (str's in list) saved in separeted list.
@@ -119,7 +118,7 @@ class Url:
         if (
             not validators.url(value)
             or not value.startswith("https://pubmed.ncbi.nlm.nih.gov/?")
-            or not "term=" in value
+            or "term=" not in value
         ):
             raise UserInputError("Invalid URL.")
 
@@ -160,16 +159,36 @@ class FileFormat:
             ) from exc
 
 
+class PagesAmount:
+    def __get__(self, instance, owner=None) -> int:
+        return self.value
+
+    def __set__(self, instance, value: int) -> None:
+        try:
+            value = int(value)
+        except ValueError as exc:
+            raise UserInputError("Pages amount must be digit.") from exc
+
+        if not 1 <= value <= 1_000:
+            raise UserInputError("Page amout must be in between [1, 1000].")
+
+        self.value = value
+
+
 class Input:
 
     url = Url()
     filename = Filename()
     file_format = FileFormat()
+    pages_amount = PagesAmount()
 
-    def __init__(self, url: str, filename: str, file_format: str) -> None:
+    def __init__(
+        self, url: str, filename: str, file_format: str, pages_amount: int
+    ) -> None:
         self.url = url
         self.filename = filename
         self.file_format = file_format
+        self.pages_amount = pages_amount
 
 
 class Parser:
@@ -274,12 +293,26 @@ def user_input() -> Input:
         "What type of output file: .txt or .md?(default is .md)\n1 - .md\n2 - .txt\n"
     )
 
-    return Input(url + "&page={}", filename, file_format)
+    pages_amount = (
+        input("\nHow many pages do you want to get? ")
+        if input(
+            "Default amount of pages is 5 (1 page = 50 research).\nDo you want to change it? [Y-yes, N-no] "
+        ).lower()
+        in ["yes", "y", "ye", "ys"]
+        else DEFAULT_PAGES_AMOUNT
+    )
+
+    return Input(url + "&page={}", filename, file_format, pages_amount)
 
 
 @timer
 async def main(
-    url: str, filename: str, file_format: str, editor: Editor, writer: Writer
+    url: str,
+    filename: str,
+    file_format: str,
+    pages_amount: int,
+    editor: Editor,
+    writer: Writer,
 ) -> None:
 
     async with ClientSession() as session:
@@ -287,7 +320,7 @@ async def main(
         try:
             tasks = [
                 parser.get_research_urls(url.format(page))
-                for page in range(1, PAGES_AMOUNT + 1)
+                for page in range(1, pages_amount + 1)
             ]
             research_urls = await asyncio.gather(*tasks)
         except ParseDataError as e:
@@ -302,7 +335,7 @@ async def main(
         )  # [[.], [..],] -> [., ..,]
         if not all_urls:
             raise UserInputError("There is no research on your URL. Please check it!")
-            
+
         print(
             "\nResearch links have been successfully collected.\nData collection begins..."
         )
@@ -332,5 +365,12 @@ if __name__ == "__main__":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         editor, writer = Editor(), Writer()
         asyncio.run(
-            main(input_.url, input_.filename, input_.file_format, editor, writer)
+            main(
+                url=input_.url,
+                filename=input_.filename,
+                file_format=input_.file_format,
+                pages_amount=input_.pages_amount,
+                editor=editor,
+                writer=writer,
+            )
         )
