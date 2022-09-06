@@ -19,7 +19,6 @@ FILE_FORMATS = {
     "2": ".txt",
 }
 
-#TODO Dataclass insted if Input class with descriptors
 # https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
 
 
@@ -40,11 +39,6 @@ class UrlPage(NamedTuple):
     html_page: str | None
 
 
-class UrlStatus(NamedTuple):
-    url: str
-    status: int
-
-
 class TitleAbstract(NamedTuple):
     title: str
     abstract: list[str]
@@ -52,7 +46,7 @@ class TitleAbstract(NamedTuple):
 
 class AllUrlsSkippedPages(NamedTuple):
     all_urls: list[str | None]
-    skipped_pages: list[UrlStatus | None]
+    skipped_pages: list[str | None]
 
 
 class FormattedSkippedResearches(NamedTuple):
@@ -73,7 +67,7 @@ def timer(func):
     return inner
 
 
-def chain_research_urls(urls: list[list[str | None]] | str) -> AllUrlsSkippedPages:
+def chain_research_urls(urls: list[list[str | None] | str]) -> AllUrlsSkippedPages:
     """Join nested lists with researches into a single list.
 
     [[...], [...], [...]] -> [..., ..., ...]
@@ -182,7 +176,7 @@ class Input:
     pages_amount = PagesAmount()
 
     def __init__(
-        self, url: str, filename: str, file_format: str, pages_amount: int
+        self, url: str, filename: str, file_format: str, pages_amount: int | str
     ) -> None:
         self.url = url
         self.filename = filename
@@ -293,12 +287,11 @@ def user_input() -> Input:
     pages_amount = (
         input("\nHow many pages do you want to get? ")
         if input(
-            "Default amount of pages is 5 (1 page = 50 research).\nDo you want to change it? [Y-yes, N-no] "
+            f"Default amount of pages is {DEFAULT_PAGES_AMOUNT} (1 page = 50 research).\nDo you want to change it? [Y-yes, N-no] "
         ).lower()
         in ["yes", "y", "ye", "ys"]
         else DEFAULT_PAGES_AMOUNT
     )
-
     return Input(url + "&page={}", filename, file_format, pages_amount)
 
 
