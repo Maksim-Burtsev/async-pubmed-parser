@@ -11,16 +11,13 @@ import aiohttp
 from bs4 import BeautifulSoup
 from aiohttp import ClientSession
 
-PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 DEFAULT_PAGES_AMOUNT = 5
 DEFAULT_FILE_FORMAT = ".md"
-
-
+PUBMED_URL = "https://pubmed.ncbi.nlm.nih.gov"
 FILE_FORMATS = {
     "1": ".md",
     "2": ".txt",
 }
-
 # https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
 
 
@@ -34,6 +31,14 @@ class UserInputError(ValueError):
 
 class FileFormatError(ValueError):
     pass
+
+
+@dataclass
+class Input:
+    url: str
+    pages_amount: int
+    filename: str
+    file_format: str
 
 
 class UrlPage(NamedTuple):
@@ -62,7 +67,8 @@ def timer(func):
         start = time.time()
         result = await func(*args, **kwargs)
         print(
-            f"\nSuccess!\nNow you can view collected researches in your file.\n\nThe running time was {time.time()-start:.1f} sec."
+            "\nSuccess!\nNow you can view collected researches in your file"
+            f".\n\nThe running time was {time.time()-start:.1f} sec."
         )
         return result
 
@@ -102,13 +108,27 @@ def print_skipped_urls(
             print(url)
 
 
+def get_format_by_code(file_format_code: str) -> str:
+    """Gets code (e.g 1, 2 and etc.) and return the format is matches"""
+    if not file_format_code:
+        return DEFAULT_FILE_FORMAT  # .md
+
+    try:
+        return FILE_FORMATS[file_format_code]
+    except KeyError as exc:
+        raise UserInputError(
+            "\nInvalid format. To choose type of file type the number of one"
+            "of the suggested choises or empty string to choose Markdown."
+        ) from exc
+
+
 class InputValidator:
-    def get_url(self, url: str) -> str:
+    def url(self, url: str) -> str:
         """Validate url.
 
-        If its valid replace all spaces on the pluses.
+        If it's valid replace all spaces on the pluses.
 
-        ...?term=very long term -> ...?term=very+long+term"""
+        ..?term=very long term -> ..?term=very+long+term"""
         if not url:
             raise UserInputError("\nEmpty string instead of URL.")
 
@@ -121,7 +141,7 @@ class InputValidator:
 
         return url.strip().replace(" ", "+")
 
-    def get_filename(self, filename: str):
+    def filename(self, filename: str):
         """Validate filename.
 
         If its valid replace all space on '_' and  remove all illegal for name sybmols."""
@@ -134,19 +154,7 @@ class InputValidator:
             return clean_filename
         raise UserInputError("\nFilename consists invalid characters.")
 
-    def get_file_format(self, file_format_code: str) -> str:
-        """Return file format based on user's input code."""
-        if not file_format_code:
-            return DEFAULT_FILE_FORMAT
-
-        try:
-            return FILE_FORMATS[file_format_code]
-        except KeyError as exc:
-            raise UserInputError(
-                "\nInvalid format. To choose type of file type the number of one of the suggested choises or empty string to choose Markdown."
-            ) from exc
-
-    def get_pages_amount(self, pages_amount: str | int) -> int:
+    def pages_amount(self, pages_amount: str | int) -> int:
         """Validate and return input pages amount."""
         try:
             pages_amount = int(pages_amount)
@@ -157,26 +165,6 @@ class InputValidator:
             raise UserInputError("\nPage amout must be in between [1, 1000].")
 
         return pages_amount
-
-
-@dataclass
-class Input:
-    """Dataclass which validate, format and save user input.
-
-    File format are is assigned in post init method based on the user code response.
-    """
-
-    url: str
-    filename: str
-    file_format_code: str | int
-    pages_amount: int
-    file_format: str = ""
-
-    def __post_init__(self, validator=InputValidator()):
-        self.url = validator.get_url(self.url)
-        self.filename = validator.get_filename(self.filename)
-        self.file_format = validator.get_file_format(self.file_format_code)
-        self.pages_amount = validator.get_pages_amount(self.pages_amount)
 
 
 class Parser:
@@ -191,7 +179,8 @@ class Parser:
             urls = div.findAll("a", {"class": "docsum-title"})
         except AttributeError as exc:
             raise ParseDataError(
-                "\nProblem with parse researches, please check entered URL for corectless!"
+                "\nProblem with parse researches, please check entered URL for"
+                "corectless!"
             ) from exc
         return [url.get("href") for url in urls]
 
@@ -215,7 +204,9 @@ class Parser:
             return url
 
     async def get_research_page(self, page_url: str) -> UrlPage:
-        """Parse page of research. If response.status_code != 200, then instead of page content return's None."""
+        """Parse page of research. 
+        
+        If response.status_code != 200, then instead of page content return's None."""
         async with self.session.get(page_url) as response:
             if response.status == 200:
                 page = await response.text()
@@ -245,7 +236,9 @@ class Editor:
     def get_formatted_research(
         self, research_data: list[UrlPage], parser: Parser, file_format: str
     ) -> FormattedSkippedResearches:
-        """Parse title and abstract from html-page of research. Format them to write in file: add spaces, break lines and change size of fonts (for Mardown).
+        """Parse title and abstract from html-page of research. Format them to
+        write in file: add spaces, break lines and change size of fonts (for
+        Mardown).
 
         Return two lists - formatted and skipped researches.
         """
@@ -263,7 +256,6 @@ class Editor:
                 )
         return FormattedSkippedResearches(formatted_research, skipped_urls)
 
-
 class Writer:
     def write_in_file(self, filename: str, text: str, file_format) -> None:
         """Write test into file with the passed extension."""
@@ -271,24 +263,31 @@ class Writer:
             f.write(text)
 
 
-def user_input() -> Input:
-    """Getting user's input."""
-    url = input("URL: ").strip()
-    filename = input("Filename: ")
-    file_format_code = input(
-        "What type of output file: .txt or .md?(default is .md)\n1 - .md\n2 - .txt\n"
+def user_input(validator: InputValidator = InputValidator()) -> Input:
+    """Getting user input and immediately validate and format it.
+
+    Format means remove extra spaces (from url, filename) and illegal characters from filename"""
+    url = validator.url(input("URL: ").strip() + "&page={}")
+    filename = validator.filename(input("Filename: "))
+
+    file_format = get_format_by_code(
+        input(
+            "What type of output file: .txt or .md?(default is .md)"
+            "\n1 - .md\n2 - .txt\n"
+        )
     )
 
     pages_amount = (
-        input("\nHow many pages do you want to get? ")
+        validator.pages_amount(input("\nHow many pages do you want to get? "))
         if input(
-            f"Default amount of pages is {DEFAULT_PAGES_AMOUNT} (1 page = 50 research).\nDo you want to change it? [Y-yes, N-no] "
+            f"Default amount of pages is {DEFAULT_PAGES_AMOUNT} "
+            "(1 page = 50 research).\nDo you want to change it? [Y-yes, N-no] "
         ).lower()
         in ["yes", "y", "ye", "ys"]
         else DEFAULT_PAGES_AMOUNT
     )
-    return Input(url + "&page={}", filename, file_format_code, pages_amount)
-    # return Input(url + "&page={}", filename, file_format, pages_amount)
+
+    return Input(url, pages_amount, filename, file_format)
 
 
 @timer
@@ -316,14 +315,14 @@ async def main(
             print("Enter correct URL!")
             sys.exit()
 
-        all_urls, skipped_pages = chain_research_urls(
-            research_urls
-        )  # [[.], [..],] -> [., ..,]
+        all_urls, skipped_pages = chain_research_urls(research_urls)
+        # [[.], [..],] -> [., ..,]
         if not all_urls:
             raise UserInputError("\nThere is no research on your URL. Please check it!")
 
         print(
-            "\nResearch links have been successfully collected.\nData collection begins..."
+            "\nResearch links have been successfully collected."
+            "\nData collection begins..."
         )
 
         tasks = [parser.get_research_page(research_url) for research_url in all_urls]
@@ -340,7 +339,8 @@ async def main(
         )
     else:
         print(
-            "There is nothing to write in file by your URL. Please check it on correct and look below on URL's which was skipped."
+            "There is nothing to write in file by your URL. Please check it on"
+            "correct and look below on URL's which was skipped."
         )
 
     print_skipped_urls(skipped_pages, skipped_researches)
@@ -349,8 +349,8 @@ async def main(
 if __name__ == "__main__":
     try:
         input_ = user_input()
-    except UserInputError as e:
-        print(e)
+    except UserInputError as exc:
+        print(exc)
     else:
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
         editor, writer = Editor(), Writer()
