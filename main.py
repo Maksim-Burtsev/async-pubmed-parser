@@ -5,11 +5,12 @@ import asyncio
 import functools
 import validators
 from typing import NamedTuple
-from dataclasses import dataclass
 
 import aiohttp
 from bs4 import BeautifulSoup
 from aiohttp import ClientSession
+from pydantic.dataclasses import dataclass
+from pydantic import AnyHttpUrl
 
 DEFAULT_PAGES_AMOUNT = 5
 DEFAULT_FILE_FORMAT = ".md"
@@ -19,6 +20,7 @@ FILE_FORMATS = {
     "2": ".txt",
 }
 # https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
+# TODO eng README
 
 
 class ParseDataError(Exception):
@@ -35,7 +37,7 @@ class FileFormatError(ValueError):
 
 @dataclass
 class Input:
-    url: str
+    url: AnyHttpUrl
     pages_amount: int
     filename: str
     file_format: str
@@ -139,7 +141,7 @@ class InputValidator:
         ):
             raise UserInputError("\nInvalid URL.")
 
-        return url.strip().replace(" ", "+")
+        return url
 
     def filename(self, filename: str):
         """Validate filename.
@@ -204,8 +206,8 @@ class Parser:
             return url
 
     async def get_research_page(self, page_url: str) -> UrlPage:
-        """Parse page of research. 
-        
+        """Parse page of research.
+
         If response.status_code != 200, then instead of page content return's None."""
         async with self.session.get(page_url) as response:
             if response.status == 200:
@@ -223,7 +225,7 @@ class Editor:
 
     def format_research(
         self, title: str, url: str, cleaned_abstract: str, file_format: str
-    ) -> str | None:
+    ) -> str:
         """Format research to write in file."""
         match file_format:
             case ".md":
@@ -255,6 +257,7 @@ class Editor:
                     )
                 )
         return FormattedSkippedResearches(formatted_research, skipped_urls)
+
 
 class Writer:
     def write_in_file(self, filename: str, text: str, file_format) -> None:
