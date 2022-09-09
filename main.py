@@ -19,8 +19,6 @@ FILE_FORMATS = {
     "1": ".md",
     "2": ".txt",
 }
-# https://breakpoint.black/review/4d143bfd-5b12-441f-b820-c3e45eb3f61e/
-# TODO eng README
 
 
 class ParseDataError(Exception):
@@ -190,10 +188,10 @@ class Parser:
         """Get title and abstract of research from his html-page"""
         soup = BeautifulSoup(research_page, "html.parser")
         try:
-            title = soup.find("h1", class_="heading-title").text.strip()
-            abstract_ps = soup.find("div", class_="abstract-content selected")
+            title = soup.find("h1", {"class": "heading-title"}).text.strip()
+            abstract_ps = soup.find("div", {"class": "abstract-content selected"})
             abstract = abstract_ps.findAll("p")
-        except Exception as exc:
+        except AttributeError as exc:
             raise ParseDataError("\nError when parsing a research!") from exc
         return TitleAbstract(title, [par.text for par in abstract])
 
