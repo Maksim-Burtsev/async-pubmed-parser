@@ -6,7 +6,7 @@ PubMed - is a search engine for biomedical research.
 
 In particular, it publishes studies (descriptions) on a wide variety of topics. 
 
-## *Что делает эта программа*
+## *What does this program*
 
 This application collects the title and abstract of studies and then writes them in a file (.md or .txt). 
 
