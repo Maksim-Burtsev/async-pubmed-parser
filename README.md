@@ -46,6 +46,7 @@ python main.py
 **1**
 
 ```Default amount of pages is 5 (1 page = 50 research). ```
+
 ```Do you want to change it? [Y-yes, N-no]``` **N**
 
 ```Research links have been successfully collected.```
@@ -53,12 +54,14 @@ python main.py
 ```Data collection begins...```
 
 ```Data successfully collected!```
+
 ```Preparing and writing to file...```
 
 ```Success!```
+
 ```Now you can view collected researches in your file.```
 
-The running time was 7.1 sec.
+```The running time was 7.1 sec.```
 
 The file **heat.md** with formatted data appears in the current directory.
 
